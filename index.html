@@ -1621,6 +1621,10 @@ async function markOfferComplete(uid,wallId,amount){
   render();
 }
 
+   function updateNavBar(){
+  const balEl=$('.nav-bal');
+  if(balEl && S.userData) balEl.textContent=fmt$(S.userData.usdEarned||0);
+}
 // ─── REALTIME LISTENERS ───────────────────────────────
 function setupListeners(uid){
   // Clean old
