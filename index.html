@@ -1435,7 +1435,7 @@ async function getWallData(){
       id:w.id, icon:w.icon, color:w.color,
       name:      w.defaultName||`Offerwall ${i+1}`,
       desc:      w.defaultDesc||'',
-      link:      w.defaultIframe||'',
+      link:      (w.defaultIframe||'').replace(/\{uid\}/g, S.user?.uid||''),
       scriptCode:w.defaultScript||'',
       rssPlatform:w.defaultRSS||'',
       embedMode: w.embedMode||'rss',
