@@ -1395,23 +1395,33 @@ function buildLangModal(){
 // ─── COUNTRY DETECT ───────────────────────────────────
 async function detectCountry(){
   try{
-    // ✅ নতুন check — database এ country আগে থেকে আছে কিনা
+    // যদি user logged in এবং database এ country আগে থেকে save আছে
+    // তাহলে সেটাই use করবে — VPN বা নতুন IP দিয়ে কখনো overwrite হবে না
     if(S.user && S.userData && S.userData.country){
       const savedCC = S.userData.country;
       S.country = savedCC;
-      // ... earn calculate from savedCC
-      return savedCC; // ← API call ই হয় না, database update হয় না
+      let savedEarn = CFG.earnDef;
+      if(CFG.earnCountry[savedCC]) savedEarn = CFG.earnCountry[savedCC];
+      else if(CFG.hiCC.includes(savedCC)) savedEarn = CFG.earnHi;
+      S.countryEarn = savedEarn;
+      return savedCC; // database এর locked country — API call হবে না
     }
-    // নতুন user হলে তবেই IP detect করো
+    // নতুন user (database এ এখনো country নেই) → IP থেকে detect করো
     const r=await fetch('https://country-check.therockvai-textbd2025.workers.dev');
-    // ...
-    // শুধু database এ country না থাকলেই save করো
+    const d=await r.json();
+    const cc=d.country||'';
+    S.country=cc;
+    let earn=CFG.earnDef;
+    if(CFG.earnCountry[cc]) earn=CFG.earnCountry[cc];
+    else if(CFG.hiCC.includes(cc)) earn=CFG.earnHi;
+    S.countryEarn=earn;
+    // শুধু তখনই save করবে যখন database এ country নেই (registration এর পরপর একবার)
     if(S.user && S.userData && !S.userData.country){
-      fDB.ref(`users/${S.user.uid}/country`).set(cc);      // ← একবারই হয়
-      fDB.ref(`users/${S.user.uid}/countryEarn`).set(earn); // ← একবারই হয়
+      fDB.ref(`users/${S.user.uid}/country`).set(cc);
+      fDB.ref(`users/${S.user.uid}/countryEarn`).set(earn);
     }
     return cc;
-  }catch(e){ ... }
+  }catch(e){ S.country=''; S.countryEarn=CFG.earnDef; return ''; }
 }
 
 // ─── FIREBASE DB HELPERS ──────────────────────────────
