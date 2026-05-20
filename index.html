@@ -1395,20 +1395,23 @@ function buildLangModal(){
 // ─── COUNTRY DETECT ───────────────────────────────────
 async function detectCountry(){
   try{
+    // ✅ নতুন check — database এ country আগে থেকে আছে কিনা
+    if(S.user && S.userData && S.userData.country){
+      const savedCC = S.userData.country;
+      S.country = savedCC;
+      // ... earn calculate from savedCC
+      return savedCC; // ← API call ই হয় না, database update হয় না
+    }
+    // নতুন user হলে তবেই IP detect করো
     const r=await fetch('https://country-check.therockvai-textbd2025.workers.dev');
-    const d=await r.json();
-    const cc=d.country||'';
-    S.country=cc;
-    let earn=CFG.earnDef;
-    if(CFG.earnCountry[cc]) earn=CFG.earnCountry[cc];
-    else if(CFG.hiCC.includes(cc)) earn=CFG.earnHi;
-    S.countryEarn=earn;
-    if(S.user && S.userData){
-      fDB.ref(`users/${S.user.uid}/country`).set(cc);
-      fDB.ref(`users/${S.user.uid}/countryEarn`).set(earn);
+    // ...
+    // শুধু database এ country না থাকলেই save করো
+    if(S.user && S.userData && !S.userData.country){
+      fDB.ref(`users/${S.user.uid}/country`).set(cc);      // ← একবারই হয়
+      fDB.ref(`users/${S.user.uid}/countryEarn`).set(earn); // ← একবারই হয়
     }
     return cc;
-  }catch(e){ S.country=''; S.countryEarn=CFG.earnDef; return ''; }
+  }catch(e){ ... }
 }
 
 // ─── FIREBASE DB HELPERS ──────────────────────────────
