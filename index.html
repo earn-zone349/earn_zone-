@@ -1507,7 +1507,7 @@ async function doRegister(name,email,pw,refCode){
   try{
     const cred=await fAuth.createUserWithEmailAndPassword(email,pw);
     const uid=cred.user.uid;
-    await cred.user.sendEmailVerification();
+    //await cred.user.sendEmailVerification();
     const code=genRef();
     const userData={
       name:name||email.split('@')[0], email, uid, createdAt:Date.now(),
@@ -1516,7 +1516,7 @@ async function doRegister(name,email,pw,refCode){
       coins:0, usdEarned:0, todayEarned:0, todayDate:new Date().toDateString(),
       adsWatched:0, offersCompleted:0, activeReferrals:0,
       isAdmin:false, banned:false, forgotUsed:false,
-      deviceId:devId, emailVerified:false,
+      deviceId:devId, emailVerified:true,
     };
     await fDB.ref(`users/${uid}`).set(userData);
     // Add referral
@@ -1526,7 +1526,7 @@ async function doRegister(name,email,pw,refCode){
   .transaction(v => (v||0) + CFG.refBonus);
     }
     toast(T('rs'),'s');
-    S.page='verify';
+    S.page='home';
     render();
   }catch(e){
     toast(e.message,'e');
@@ -2713,12 +2713,12 @@ fAuth.onAuthStateChanged(async user=>{
   if(user){
     S.user=user;
     // Check email verified
-    if(!user.emailVerified){
-      S.page='verify';
-      $('#ldr').style.display='none';
-      $('#app').style.display='block';
-      render(); return;
-    }
+    //if(!user.emailVerified){
+      //S.page='verify';
+     // $('#ldr').style.display='none';
+      //$('#app').style.display='block';
+      //render(); return;
+    //}
     // Load user data
     const ud=await loadUserData(user.uid);
     if(!ud){
