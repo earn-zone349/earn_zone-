@@ -1714,9 +1714,12 @@ async function checkDailyLoginBonus(uid){
     // Give $0.01 bonus
     await fDB.ref(`users/${uid}/usdEarned`).transaction(v=>(v||0)+0.01);
     await fDB.ref(`users/${uid}/lastLoginBonus`).set(today);
-    // Add to today's earning
+    // Add to today's earning — same pattern as processPostbacks
     const tdSnap=await fDB.ref(`users/${uid}/todayDate`).once('value');
-    if(tdSnap.val()===today){
+    if(tdSnap.val()!==today){
+      await fDB.ref(`users/${uid}/todayDate`).set(today);
+      await fDB.ref(`users/${uid}/todayEarned`).set(0.01);
+    } else {
       await fDB.ref(`users/${uid}/todayEarned`).transaction(v=>(v||0)+0.01);
     }
     setTimeout(()=>toast('🎁 Daily Login Bonus: +$0.01!','s',4000),1200);
@@ -1743,9 +1746,12 @@ async function onDailyAdComplete(slotKey){
   // Add earning
   await fDB.ref(`users/${uid}/usdEarned`).transaction(v=>(v||0)+DA_EARN);
   await fDB.ref(`users/${uid}/adsWatched`).transaction(v=>(v||0)+1);
-  // Today earned
+  // Today earned — same pattern as processPostbacks
   const tdSnap=await fDB.ref(`users/${uid}/todayDate`).once('value');
-  if(tdSnap.val()===today){
+  if(tdSnap.val()!==today){
+    await fDB.ref(`users/${uid}/todayDate`).set(today);
+    await fDB.ref(`users/${uid}/todayEarned`).set(DA_EARN);
+  } else {
     await fDB.ref(`users/${uid}/todayEarned`).transaction(v=>(v||0)+DA_EARN);
   }
   toast(`✅ Ad Complete! +$${DA_EARN.toFixed(2)} added!`,'s',3500);
