@@ -170,6 +170,22 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 .empty{text-align:center;padding:36px 16px;color:#94a3b8}
 .ein{font-size:40px;margin-bottom:10px}.etx{font-size:13px}
 
+/* DAILY ADS SLOT BUTTONS */
+.da-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.da-btn{background:#fff;border:2px solid #dbeafe;border-radius:16px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;transition:all .22s;font-family:'DM Sans',sans-serif;position:relative;overflow:hidden}
+.da-btn:hover:not(:disabled){transform:translateY(-2px);border-color:#93c5fd;box-shadow:0 6px 20px rgba(37,99,235,.13)}
+.da-btn:disabled{opacity:.55;cursor:not-allowed}
+.da-btn.done{background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border-color:#86efac}
+.da-btn.done::after{content:'✓';position:absolute;top:8px;right:10px;font-size:13px;color:#16a34a;font-weight:700}
+.da-btn-ic{font-size:28px}
+.da-btn-lbl{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#0f172a}
+.da-btn-earn{font-size:12px;color:#059669;font-weight:600}
+.da-btn-timer{font-size:10px;color:#94a3b8;font-weight:500}
+.da-total{background:linear-gradient(135deg,#1e40af,#065f46);border-radius:16px;padding:16px;text-align:center;margin-bottom:14px;box-shadow:0 6px 20px rgba(37,99,235,.18)}
+
+/* LOGIN BONUS BADGE */
+.lb-badge{background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;margin-bottom:12px;box-shadow:0 4px 16px rgba(245,158,11,.25)}
+
 /* OTP inputs */
 .otp-w{display:flex;gap:9px;justify-content:center;margin:16px 0}
 .otp-i{width:46px;height:54px;border-radius:11px;border:2px solid #cbd5e1;background:#f8fafc;text-align:center;font-size:22px;font-weight:700;color:#0f172a;outline:none;transition:border .18s;font-family:'Syne',sans-serif}
@@ -993,6 +1009,8 @@ function finishAd(){
     cb();
   } else if(type==='withdraw' && cb){
     cb();
+  } else if(type==='dailyad' && cb){
+    cb();
   }
 }
 
@@ -1687,6 +1705,139 @@ async function checkActiveReferrals(){
   }
 }
 
+// ─── DAILY LOGIN BONUS ─────────────────────────────────
+async function checkDailyLoginBonus(uid){
+  const today=new Date().toDateString();
+  try{
+    const snap=await fDB.ref(`users/${uid}/lastLoginBonus`).once('value');
+    if(snap.val()===today) return; // already got bonus today
+    // Give $0.01 bonus
+    await fDB.ref(`users/${uid}/usdEarned`).transaction(v=>(v||0)+0.01);
+    await fDB.ref(`users/${uid}/lastLoginBonus`).set(today);
+    // Add to today's earning
+    const tdSnap=await fDB.ref(`users/${uid}/todayDate`).once('value');
+    if(tdSnap.val()===today){
+      await fDB.ref(`users/${uid}/todayEarned`).transaction(v=>(v||0)+0.01);
+    }
+    setTimeout(()=>toast('🎁 Daily Login Bonus: +$0.01!','s',4000),1200);
+  }catch(e){ console.log('Login bonus error:',e); }
+}
+
+// ─── DAILY ADS SYSTEM ─────────────────────────────────
+const DA_SLOTS=5;
+const DA_EARN=0.01;
+const DA_GAP=86400000; // 24 hours
+
+async function getDailyAdSlots(uid){
+  const snap=await fDB.ref(`users/${uid}/dailyAdSlots`).once('value');
+  return snap.val()||{};
+}
+
+async function onDailyAdComplete(slotKey){
+  if(!S.user) return;
+  const uid=S.user.uid;
+  const now=Date.now();
+  const today=new Date().toDateString();
+  // Save slot timestamp
+  await fDB.ref(`users/${uid}/dailyAdSlots/${slotKey}`).set(now);
+  // Add earning
+  await fDB.ref(`users/${uid}/usdEarned`).transaction(v=>(v||0)+DA_EARN);
+  await fDB.ref(`users/${uid}/adsWatched`).transaction(v=>(v||0)+1);
+  // Today earned
+  const tdSnap=await fDB.ref(`users/${uid}/todayDate`).once('value');
+  if(tdSnap.val()===today){
+    await fDB.ref(`users/${uid}/todayEarned`).transaction(v=>(v||0)+DA_EARN);
+  }
+  toast(`✅ Ad Complete! +$${DA_EARN.toFixed(2)} added!`,'s',3500);
+  // Refresh daily ads UI
+  if(S.page==='dailyads') loadDailyAdsUI();
+}
+
+function slotReady(ts){
+  if(!ts) return true;
+  return (Date.now()-ts)>=DA_GAP;
+}
+function slotTimeLeft(ts){
+  if(!ts||slotReady(ts)) return '';
+  const ms=DA_GAP-(Date.now()-ts);
+  const h=Math.floor(ms/3600000);
+  const m=Math.floor((ms%3600000)/60000);
+  return `${h}h ${m}m`;
+}
+
+async function loadDailyAdsUI(){
+  const container=document.getElementById('daContainer');
+  if(!container) return;
+  const slots=await getDailyAdSlots(S.user.uid);
+  const today=new Date().toDateString();
+  let doneCount=0;
+  const icons=['🎬','🎥','📺','🎞️','📡'];
+  let html='';
+  for(let i=1;i<=DA_SLOTS;i++){
+    const key=`s${i}`;
+    const ts=slots[key]||0;
+    const ready=slotReady(ts);
+    const done=!ready; // watched in last 24h
+    if(done) doneCount++;
+    const tl=done?slotTimeLeft(ts):'';
+    html+=`<button class="da-btn${done?' done':''}" id="daBtn${i}" ${done?'disabled':''} onclick="watchDailyAd('${key}')">
+      <div class="da-btn-ic">${done?'✅':icons[i-1]}</div>
+      <div class="da-btn-lbl">Ad ${i}</div>
+      <div class="da-btn-earn">+$${DA_EARN.toFixed(2)}</div>
+      ${done?`<div class="da-btn-timer">⏱ ${tl}</div>`:'<div class="da-btn-timer">Ready!</div>'}
+    </button>`;
+  }
+  container.innerHTML=html;
+  // Update total display
+  const totalEl=document.getElementById('daTotalEarned');
+  if(totalEl) totalEl.textContent=`$${(doneCount*DA_EARN).toFixed(2)} / $${(DA_SLOTS*DA_EARN).toFixed(2)}`;
+  const doneEl=document.getElementById('daDoneCount');
+  if(doneEl) doneEl.textContent=`${doneCount} / ${DA_SLOTS}`;
+  const barEl=document.getElementById('daProgressBar');
+  if(barEl) barEl.style.width=`${(doneCount/DA_SLOTS)*100}%`;
+}
+
+function watchDailyAd(slotKey){
+  if(S.adActive){ toast('Ad already running','w'); return; }
+  startAd(null,'dailyad',()=>onDailyAdComplete(slotKey));
+}
+
+function buildDailyAds(){
+  return `<div class="ph">
+    <div class="pt">📺 Daily Ads</div>
+    <div class="ps">Watch 5 ads daily · Earn $0.05 per day</div>
+  </div>
+  <!-- Total Progress -->
+  <div class="da-total">
+    <div style="font-size:11px;color:rgba(255,255,255,.7);font-weight:600;text-transform:uppercase;letter-spacing:.09em;margin-bottom:4px">Today's Earnings</div>
+    <div style="font-family:'Syne',sans-serif;font-size:32px;font-weight:800;color:#fbbf24" id="daTotalEarned">$0.00 / $0.05</div>
+    <div style="font-size:12px;color:rgba(255,255,255,.6);margin:8px 0 10px" id="daDoneCount">0 / 5 ads done</div>
+    <div style="background:rgba(255,255,255,.15);border-radius:6px;height:7px;overflow:hidden;max-width:280px;margin:0 auto">
+      <div style="height:100%;border-radius:6px;background:linear-gradient(90deg,#fbbf24,#86efac);transition:width .5s ease" id="daProgressBar"></div>
+    </div>
+  </div>
+  <!-- Info card -->
+  <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:13px;padding:12px 15px;margin-bottom:14px;display:flex;align-items:center;gap:11px">
+    <div style="font-size:22px">💡</div>
+    <div style="font-size:12px;color:#1d4ed8;line-height:1.7">Each button = 1 ad = <strong>+$0.01</strong><br>Resets every <strong>24 hours</strong> per button</div>
+  </div>
+  <!-- 5 Ad Buttons -->
+  <div class="da-grid" id="daContainer">
+    <div class="empty" style="grid-column:1/-1"><div style="animation:spin 1s linear infinite;display:inline-block;font-size:28px">⏳</div></div>
+  </div>
+  <!-- How it works -->
+  <div class="card">
+    <div class="card-hd">ℹ️ How it works</div>
+    <div style="font-size:13px;color:#64748b;line-height:1.9">
+      1. Click any <strong>Ready</strong> button<br>
+      2. Ad opens in new tab<br>
+      3. Wait 8 seconds on this page<br>
+      4. <strong>$0.01</strong> added to balance ✅<br>
+      5. Each button resets after 24 hours
+    </div>
+  </div>`;
+}
+
 // ─── MAIN RENDER ──────────────────────────────────────
 function render(){
   if(!S.user || S.page==='verify'){
@@ -1843,6 +1994,7 @@ function renderApp(){
   else if(S.page==='wallet') html+=buildWallet();
   else if(S.page==='offers') html+=buildOffers();
   else if(S.page==='profile') html+=buildProfile();
+  else if(S.page==='dailyads') html+=buildDailyAds();
   else if(S.page==='admin' && S.userData.isAdmin) html+=buildAdmin();
   else if(S.page==='notices') html+=buildNotices();
   else if(S.page==='unlock') html+=buildUnlock(S.unlockWallId);
@@ -1873,6 +2025,7 @@ function buildBottomNav(){
     {p:'home',ic:'🏠',lb:T('db')},
     {p:'wallet',ic:'💰',lb:T('wl')},
     {p:'offers',ic:'🎯',lb:T('of')},
+    {p:'dailyads',ic:'📺',lb:'Daily'},
     {p:'profile',ic:'👤',lb:T('pr')},
   ];
   return `<nav class="bnav">${pages.map(pg=>`
@@ -1889,6 +2042,7 @@ function buildSidebar(){
   <button class="si${S.page==='home'?' on':''}" data-page="home"><span class="si-ico">🏠</span>${T('db')}</button>
   <button class="si${S.page==='wallet'?' on':''}" data-page="wallet"><span class="si-ico">💰</span>${T('wl')}</button>
   <button class="si${S.page==='offers'?' on':''}" data-page="offers"><span class="si-ico">🎯</span>${T('of')}</button>
+  <button class="si${S.page==='dailyads'?' on':''}" data-page="dailyads"><span class="si-ico">📺</span>Daily Ads <span class="bdg bdg2" style="margin-left:auto">+$0.05/day</span></button>
   <div class="sdb-sg">Account</div>
   <button class="si${S.page==='profile'?' on':''}" data-page="profile"><span class="si-ico">👤</span>${T('pr')}</button>
   <button class="si${S.page==='notices'?' on':''}" data-page="notices"><span class="si-ico">📢</span>${T('ns')} ${S.noticeQueue.length>0?`<span class="bdg bdr" style="margin-left:auto">${S.noticeQueue.length}</span>`:''}</button>
@@ -1905,7 +2059,16 @@ function buildHome(){
   const ud=S.userData||{};
   const today=new Date().toDateString();
   const todayEarn=ud.todayDate===today?(ud.todayEarned||0):0;
+  const gotLoginBonus=(ud.lastLoginBonus===today);
   return `<div class="ph"><div class="pt">👋 ${ud.name||ud.email?.split('@')[0]||'User'}</div><div class="ps">Welcome back to EarnZone Pro</div></div>
+  ${gotLoginBonus?'':`<div class="lb-badge">
+    <div style="font-size:28px">🎁</div>
+    <div>
+      <div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#fff">Daily Login Bonus</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.85)">+$0.01 added to your balance today!</div>
+    </div>
+    <div style="margin-left:auto;font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fff">+$0.01</div>
+  </div>`}
   <div class="hero">
     <div class="hg1"></div><div class="hg2"></div>
     <div style="font-size:11px;color:#a78bfa;font-weight:600;margin-bottom:4px;text-transform:uppercase;letter-spacing:.09em">Your Earnings</div>
@@ -2669,6 +2832,8 @@ function attachAppEvents(){
   }
   // Notices
   if(S.page==='notices') loadNotices();
+  // Daily Ads
+  if(S.page==='dailyads') loadDailyAdsUI();
   // Admin tabs
   if(S.page==='admin'){
     $$('[data-atab]').forEach(b=>b.onclick=()=>{ S.adminTab=b.dataset.atab; render(); });
@@ -2744,6 +2909,8 @@ fAuth.onAuthStateChanged(async user=>{
     await loadPayoutSettings();
     // Process any pending postbacks
     processPostbacks();
+    // Daily login bonus
+    checkDailyLoginBonus(user.uid);
     // Setup realtime listeners
     setupListeners(user.uid);
     // Go to home
