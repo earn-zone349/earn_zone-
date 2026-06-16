@@ -374,10 +374,10 @@ const CFG = {
       // ── Offerwall 3 Settings ──
       defaultName: 'Mobile Offers',
       defaultDesc: 'survey earn',
-      embedMode:   'iframe',
-      defaultIframe: 'https://theoremreach.com/respondent_entry/direct?api_key=db04696a9e0d80b63cc&user_id={uid}',             // ← OGAds/AdGem iframe URL এখানে
-      defaultScript: '',
-      defaultRSS:  'ogads',          // ← ogads | adgate | adscend | mylead | adworkm
+      embedMode:   'script',
+      defaultIframe: '',
+      defaultScript: '<script type="text/javascript" src="https://theoremreach.com/javascript_sdk/TheoremReach.js"><\/script><script type="text/javascript">var _TR=new TheoremReach("db04696a9e0d80b63cc","{uid}");_TR.showRewardCenter();<\/script>',
+      defaultRSS:  'ogads',
     },
 
     { id:'w4', icon:'🎮', color:'#10b981',
