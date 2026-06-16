@@ -374,9 +374,9 @@ const CFG = {
       // ── Offerwall 3 Settings ──
       defaultName: 'Mobile Offers',
       defaultDesc: 'survey earn',
-      embedMode:   'script',
-      defaultIframe: '',
-      defaultScript: '<script type="text/javascript" src="https://theoremreach.com/javascript_sdk/TheoremReach.js"><\/script><script type="text/javascript">var _TR=new TheoremReach("db04696a9e0d80b63cc","{uid}");_TR.showRewardCenter();<\/script>',
+      embedMode:   'iframe',
+      defaultIframe: 'https://theoremreach.com/respondent_entry/direct?api_key=db04696a9e0d80b63cc&user_id={uid}&transaction_id={uid}',
+     // defaultScript: '<script type="text/javascript" src="https://theoremreach.com/javascript_sdk/TheoremReach.js"><\/script><script type="text/javascript">var _TR=new TheoremReach("db04696a9e0d80b63cc","{uid}");_TR.showRewardCenter();<\/script>',
       defaultRSS:  'ogads',
     },
 
