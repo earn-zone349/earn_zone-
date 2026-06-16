@@ -1506,16 +1506,17 @@ function msToHM(ms){
 
 // ─── THEOREMREACH SECURE URL BUILDER ─────────────────
 async function buildTheoremReachUrl(uid, apiKey, secret, partnerId){
-  const txid = uid + '_' + Date.now();
-  const base  = 'https://theoremreach.com/respondent_entry/direct';
-  const params = 'api_key='          + encodeURIComponent(apiKey)
-    + '&user_id='                    + encodeURIComponent(uid)
-    + '&transaction_id='             + encodeURIComponent(txid)
+  const txid   = uid + '_' + Date.now();
+  const base   = 'https://theoremreach.com/respondent_entry/direct';
+  // Raw params (no encodeURIComponent) — TheoremReach hash এভাবেই করে
+  const params = 'api_key='         + apiKey
+    + '&user_id='                   + uid
+    + '&transaction_id='            + txid
     + '&currency_name_plural=USD'
     + '&currency_name_singular=USD'
-    + '&exchange_rate=10'
-    + '&external_id='                + encodeURIComponent(uid)
-    + '&partner_id='                 + encodeURIComponent(partnerId);
+    + '&exchange_rate=1'
+    + '&external_id='               + uid
+    + '&partner_id='                + partnerId;
   const fullUrl = base + '?' + params;
   try{
     const enc = new TextEncoder();
@@ -1524,9 +1525,12 @@ async function buildTheoremReachUrl(uid, apiKey, secret, partnerId){
       { name:'HMAC', hash:'SHA-1' },
       false, ['sign']
     );
-    const sig  = await crypto.subtle.sign('HMAC', key, enc.encode(fullUrl));
-    const b64  = btoa(String.fromCharCode(...new Uint8Array(sig)))
-                  .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+    const sig = await crypto.subtle.sign('HMAC', key, enc.encode(fullUrl));
+    // TheoremReach format: Base64 then +→- /→_ =→''
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+                  .replace(/\+/g,'-')
+                  .replace(/\//g,'_')
+                  .replace(/=/g,'');
     return fullUrl + '&hash=' + b64;
   }catch(e){
     console.warn('TR hash error:', e);
