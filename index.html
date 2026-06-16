@@ -374,10 +374,12 @@ const CFG = {
       // ── Offerwall 3 Settings ──
       defaultName: 'Mobile Offers',
       defaultDesc: 'survey earn',
-      embedMode:   'iframe',
-      defaultIframe: 'https://theoremreach.com/respondent_entry/direct?api_key=db04696a9e0d80b63cc&user_id={uid}&transaction_id={txid}',
-     // defaultScript: '<script type="text/javascript" src="https://theoremreach.com/javascript_sdk/TheoremReach.js"><\/script><script type="text/javascript">var _TR=new TheoremReach("db04696a9e0d80b63cc","{uid}");_TR.showRewardCenter();<\/script>',
+      embedMode:   'theoremreach',
+      defaultIframe: '',
       defaultRSS:  'ogads',
+      trApiKey:    'db04696a9e0d80b63cc',
+      trSecret:    '78bf4652fdc71f9cd7869f91bd5c920b7d27a7e7',
+      trPartnerId: '25093',
     },
 
     { id:'w4', icon:'🎮', color:'#10b981',
@@ -1466,7 +1468,22 @@ async function getWallData(){
       id:w.id, icon:w.icon, color:w.color,
       name:      w.defaultName||`Offerwall ${i+1}`,
       desc:      w.defaultDesc||'',
-      link:      (w.defaultIframe||'').replace(/\{uid\}/g, S.user?.uid||'').replace(/\{txid\}/g, (S.user?.uid||'anon')+'_'+Date.now()),
+      link:      (()=>{
+        if(w.embedMode==='theoremreach'){
+          const uid=S.user?.uid||'anon';
+          const txid=uid+'_'+Date.now();
+          const apiKey=w.trApiKey||'';
+          const secret=w.trSecret||'';
+          const partnerId=w.trPartnerId||'';
+          const baseUrl='https://theoremreach.com/respondent_entry/direct';
+          const params=`api_key=${apiKey}&user_id=${uid}&transaction_id=${txid}&currency_name_plural=USD&currency_name_singular=USD&exchange_rate=10&external_id=${uid}&partner_id=${partnerId}`;
+          const fullUrl=`${baseUrl}?${params}`;
+          // SHA1-HMAC hash via SubtleCrypto (async হয় — তাই link টা hash ছাড়া দিচ্ছি, hash আলাদা inject হবে)
+          S._trPending={uid,txid,apiKey,secret,partnerId,fullUrl};
+          return fullUrl;
+        }
+        return (w.defaultIframe||'').replace(/\{uid\}/g, S.user?.uid||'');
+      })(),
       scriptCode:w.defaultScript||'',
       rssPlatform:w.defaultRSS||'',
       embedMode: w.embedMode||'rss',
@@ -1496,6 +1513,42 @@ function msToHM(ms){
 }
 
 // POSTBACK URL for user
+
+// ─── THEOREMREACH HASH HELPER ────────────────────────
+async function buildTheoremReachUrl(uid, apiKey, secret, partnerId){
+  const txid = uid + '_' + Date.now();
+  const baseUrl = 'https://theoremreach.com/respondent_entry/direct';
+  const params = 'api_key=' + apiKey
+    + '&user_id=' + encodeURIComponent(uid)
+    + '&transaction_id=' + encodeURIComponent(txid)
+    + '&currency_name_plural=USD'
+    + '&currency_name_singular=USD'
+    + '&exchange_rate=10'
+    + '&external_id=' + encodeURIComponent(uid)
+    + '&partner_id=' + partnerId;
+  const fullUrl = baseUrl + '?' + params;
+  try {
+    // SHA1-HMAC using SubtleCrypto
+    const enc = new TextEncoder();
+    const keyData = enc.encode(secret);
+    const msgData = enc.encode(fullUrl);
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw', keyData,
+      { name: 'HMAC', hash: 'SHA-1' },
+      false, ['sign']
+    );
+    const sig = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
+    // Base64 encode
+    const bytes = Array.from(new Uint8Array(sig));
+    const b64 = btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+    return fullUrl + '&hash=' + b64;
+  } catch(e) {
+    console.warn('TR hash failed, using without hash', e);
+    return fullUrl;
+  }
+}
+
 function getPostbackUrl(uid,wallId){
   return `https://earn-zone-997fb-default-rtdb.firebaseio.com/postbacks/${uid}_${wallId}.json`;
 }
@@ -2261,6 +2314,18 @@ function buildWallView(wallId){
   ${(()=>{
     // Script tag mode — inject script with uid replaced
     const embedMode=w.embedMode||'iframe';
+    if(embedMode==='theoremreach'){
+      // TheoremReach — iframe with hash-signed URL (injected async after render)
+      return `<div class="card mb12">
+        <div class="card-hd">📱 Mobile Offers — TheoremReach</div>
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:9px;padding:10px 13px;font-size:12px;color:#15803d;margin-bottom:8px">
+          ✅ Secure link generating… please wait.
+        </div>
+        <div id="trIframeZone">
+          <div class="empty"><div style="animation:spin 1s linear infinite;display:inline-block;font-size:28px">⏳</div><div class="etx mt8">Loading surveys…</div></div>
+        </div>
+      </div>`;
+    }
     if(embedMode==='script' && w.scriptCode){
       const injected=w.scriptCode.replace(/\{uid\}/g, uid);
       return `<div class="card mb12">
@@ -2274,7 +2339,7 @@ function buildWallView(wallId){
     return '';
   })()}
 
-  ${w.embedMode==='script'?'':(useRSS?`
+  ${(w.embedMode==='script'||w.embedMode==='theoremreach')?'':(useRSS?`
   <!-- RSS FEED OFFERS -->
   <div class="card mb12">
     <div class="card-hd" style="justify-content:space-between">
@@ -2789,6 +2854,41 @@ function attachAppEvents(){
             if(!oldS.src) execNext(i+1);
           };
           execNext(0);
+        }
+      }
+      // TheoremReach — async hash-signed iframe
+      if(embedMode==='theoremreach'){
+        const trZone=document.getElementById('trIframeZone');
+        if(trZone && w.trApiKey && w.trSecret && w.trPartnerId){
+          buildTheoremReachUrl(
+            S.user?.uid||'anon',
+            w.trApiKey,
+            w.trSecret,
+            w.trPartnerId
+          ).then(signedUrl=>{
+            trZone.innerHTML=`
+              <div style="margin-bottom:8px">
+                <button class="btn bp bsm bau" onclick="window.open('${signedUrl.replace(/'/g,"\'")}','_blank')">🔗 Open in New Tab ↗</button>
+              </div>
+              <div style="border:1.5px solid #dbeafe;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(37,99,235,.07)">
+                <div style="background:#eff6ff;padding:9px 13px;font-size:11px;color:#3b82f6;display:flex;align-items:center;gap:7px;border-bottom:1px solid #dbeafe">
+                  <div style="display:flex;gap:4px">
+                    <div style="width:8px;height:8px;border-radius:50%;background:#ef4444"></div>
+                    <div style="width:8px;height:8px;border-radius:50%;background:#f59e0b"></div>
+                    <div style="width:8px;height:8px;border-radius:50%;background:#22c55e"></div>
+                  </div>
+                  <span style="font-weight:600">📱 Mobile Offers — TheoremReach</span>
+                </div>
+                <iframe src="${signedUrl.replace(/"/g,'&quot;')}"
+                  style="width:100%;height:560px;display:block;border:none"
+                  scrolling="yes" loading="lazy"
+                  allow="payment *; camera *; microphone *; clipboard-write *; popup *"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation">
+                </iframe>
+              </div>`;
+          }).catch(err=>{
+            if(trZone) trZone.innerHTML='<div style="color:#dc2626;padding:12px">⚠️ Failed to load. Try opening in new tab.</div>';
+          });
         }
       }
       // RSS
